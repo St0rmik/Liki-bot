@@ -1,5 +1,6 @@
 import json
 import aiosqlite
+from pathlib import Path
 from datetime import datetime, date, timedelta
 from typing import List, Optional, Dict, Any
 from config import settings
@@ -67,6 +68,7 @@ class Database:
         self.db_path = db_path
 
     async def init_db(self):
+        Path(self.db_path).parent.mkdir(parents=True, exist_ok=True)
         async with aiosqlite.connect(self.db_path) as db:
             await db.executescript(CREATE_TABLES_SQL)
             await db.commit()

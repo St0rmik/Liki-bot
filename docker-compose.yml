@@ -1,0 +1,11 @@
+services:
+  bot:
+    build: .
+    container_name: liki_bot
+    restart: always
+    env_file:
+      - .env
+    volumes:
+      - ./data:/app/data
+    environment:
+      - DATABASE_PATH=/app/data/med_bot.db

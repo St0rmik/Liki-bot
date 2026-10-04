@@ -13,10 +13,11 @@ __pycache__/
 # Environment variables & secrets
 .env
 
-# Database
+# Database & storage
 *.db
 *.sqlite
 *.sqlite3
+data/
 
 # IDE & Editor files
 .vscode/

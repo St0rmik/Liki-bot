@@ -1,0 +1,82 @@
+name: Deploy to Oracle Cloud
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    name: Deploy Bot to Oracle Cloud VM
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.ORACLE_HOST }}
+          username: ${{ secrets.ORACLE_USERNAME }}
+          key: ${{ secrets.ORACLE_SSH_KEY }}
+          passphrase: ${{ secrets.ORACLE_SSH_PASSPHRASE }}
+          port: 22
+          script: |
+            set -e
+
+            echo "=== 1. Перевірка та встановлення Docker / Docker Compose ==="
+            if ! command -v docker &> /dev/null; then
+              echo "Встановлюємо Docker..."
+              sudo apt-get update
+              sudo apt-get install -y ca-certificates curl gnupg
+              sudo install -m 0755 -d /etc/apt/keyrings
+              curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+              sudo chmod a+r /etc/apt/keyrings/docker.gpg
+              echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+              sudo apt-get update
+              sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+              sudo usermod -aG docker $USER
+            fi
+
+            # Дозволити поточному користувачу керувати docker без повторного логіну
+            if ! docker ps &> /dev/null; then
+              DOCKER_CMD="sudo docker"
+            else
+              DOCKER_CMD="docker"
+            fi
+
+            echo "=== 2. Оновлення вихідного коду ==="
+            APP_DIR="$HOME/liki-bot"
+            if [ ! -d "$APP_DIR/.git" ]; then
+              echo "Клонування репозиторію..."
+              git clone https://github.com/St0rmik/Liki-bot.git "$APP_DIR"
+              cd "$APP_DIR"
+            else
+              echo "Підтягування останніх змін..."
+              cd "$APP_DIR"
+              git fetch --all
+              git reset --hard origin/main
+            fi
+
+            echo "=== 3. Створення .env конфігурації ==="
+            cat << 'EOF' > .env
+            BOT_TOKEN=${{ secrets.BOT_TOKEN }}
+            GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}
+            OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}
+            TIMEZONE=${{ secrets.TIMEZONE || 'Europe/Kyiv' }}
+            EOF
+            sed -i 's/^[[:space:]]*//' .env
+
+            echo "=== 4. Створення каталогу для даних SQLite ==="
+            mkdir -p data
+
+            echo "=== 5. Збірка та перезапуск контейнера ==="
+            $DOCKER_CMD compose down || true
+            $DOCKER_CMD compose up -d --build
+
+            echo "=== 6. Перевірка статусу контейнера ==="
+            sleep 3
+            $DOCKER_CMD compose ps
+            echo "Деплой успішно завершено!"
